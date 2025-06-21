@@ -84,7 +84,7 @@
             cp ${blender-manifest} blender_manifest.toml
 
             #zip animusic-blender.zip blender_manifest.toml wheels/* __init__.py
-            zip animusic-blender.zip blender_manifest.toml __init__.py
+            zip animusic-blender.zip blender_manifest.toml *.py
           '';
           installPhase = ''cp animusic-blender.zip $out'';
         };

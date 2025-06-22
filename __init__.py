@@ -8,7 +8,14 @@ from bpy.types import (
     Panel,
     PropertyGroup,
 )
-from bpy.props import CollectionProperty, FloatProperty, IntProperty, PointerProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    FloatProperty,
+    IntProperty,
+    PointerProperty,
+    StringProperty,
+)
 import json
 
 from . import directordata
@@ -20,8 +27,9 @@ if TYPE_CHECKING:
 
 class ActuatorProperties(PropertyGroup):
     name: StringProperty(default="")
-    prepare_time: FloatProperty(default=0.1, unit="TIME")
-    release_time: FloatProperty(default=0.2, unit="TIME")
+    prepare_time: FloatProperty(name="Prepare Time", default=0.1, unit="TIME")
+    release_time: FloatProperty(name="Release Time", default=0.2, unit="TIME")
+    interpolate: BoolProperty(name="Interpolate Keyframes", default=True)
 
 
 class AniMusicProperties(PropertyGroup):
@@ -77,8 +85,10 @@ class AnimusicGeneratorPanel(Panel):
         col.operator("object.generate_animusic_keyframes", text="Generate Keyframes")
         # col.template_list
 
+
 class AnimusicActuatorList(bpy.types.UIList):
     bl_idname = "VIEW3D_UL_animusic_list"
+
     def draw_item(
         self,
         context,
@@ -101,6 +111,7 @@ class AnimusicActuatorList(bpy.types.UIList):
             col.label(text=item.name)
             col.prop(item, "prepare_time")
             col.prop(item, "release_time")
+            col.prop(item, "interpolate")
 
 
 class ActuatorKeyFrame(NamedTuple):
@@ -148,6 +159,7 @@ class AnimusicImport(bpy.types.Operator):
 
         return {"FINISHED"}
 
+
 class AnimusicGenerate(bpy.types.Operator):
     bl_idname = "object.generate_animusic_keyframes"
     bl_label = "Generate Animusic Keyframes"
@@ -186,20 +198,31 @@ class AnimusicGenerate(bpy.types.Operator):
             frame = 0
             previous_hit = frame
 
+            actuator_props = props.actuators[actuator.name]
+            prepare_time = actuator_props.prepare_time
+            release_time = actuator_props.release_time
+            interpolate = actuator_props.interpolate
+
             def add_keyframe(kf: ActuatorKeyFrame):
-                obj["action"] = kf.action
-                obj["track"] = kf.track
-                obj["note"] = kf.note
+                obj["action"] = float(kf.action) if interpolate else kf.action
+                obj["track"] = float(kf.track) if interpolate else kf.track
+                obj["note"] = float(kf.note) if interpolate else kf.note
                 obj.keyframe_insert('["action"]', frame=kf.frame)
                 obj.keyframe_insert('["track"]', frame=kf.frame)
                 obj.keyframe_insert('["note"]', frame=kf.frame)
-            prepare_time = props.actuators[actuator.name].prepare_time
-            release_time = props.actuators[actuator.name].release_time
 
+            first = True
             for note in actuator.notes:
                 frame += note.delta * fps
                 end_preparation = max(frame - prepare_time * fps, previous_hit)
                 complete_animation = frame + release_time * fps
+                if first:
+                    add_keyframe(
+                        ActuatorKeyFrame(
+                            scene.frame_start, False, note.track, note.note
+                        )
+                    )
+                    first = False
                 add_keyframe(
                     ActuatorKeyFrame(int(end_preparation), False, note.track, note.note)
                 )

@@ -8,24 +8,35 @@ from bpy.types import (
     Panel,
     PropertyGroup,
 )
-from bpy.props import PointerProperty, StringProperty
+from bpy.props import CollectionProperty, FloatProperty, IntProperty, PointerProperty, StringProperty
 import json
 
-from . import demo1, directordata
+from . import directordata
 from .directordata import DirectorData
 
 if TYPE_CHECKING:
     from bpy.stub_internal.rna_enums import OperatorReturnItems
 
 
+class ActuatorProperties(PropertyGroup):
+    name: StringProperty(default="")
+    prepare_time: FloatProperty(default=0.1, unit="TIME")
+    release_time: FloatProperty(default=0.2, unit="TIME")
+
+
 class AniMusicProperties(PropertyGroup):
-    director_data: StringProperty(
-        name="Director Data",
+    director_data_path: StringProperty(
+        name="Director Data File",
         description="Animusic Director Data",
         default="",
         maxlen=1024,
         subtype="FILE_PATH",
     )
+    actuators: CollectionProperty(
+        type=ActuatorProperties,
+        name="Actuators",
+    )
+    selected_actuator: IntProperty()
 
 
 class AnimusicGeneratorPanel(Panel):
@@ -50,9 +61,46 @@ class AnimusicGeneratorPanel(Panel):
         scene = context.scene
         assert scene is not None
 
+        props: AniMusicProperties = scene.animusic
+
         col = layout.column(align=True)
-        col.prop(scene.animusic, "director_data", text="")
-        col.operator("object.generate_animusic_keyframes", text="Import")
+        col.prop(props, "director_data_path", text="")
+        col.operator("object.import_animusic_director_file", text="Import")
+        col.template_list(
+            "VIEW3D_UL_animusic_list",
+            "",
+            props,
+            "actuators",
+            props,
+            "selected_actuator",
+        )
+        col.operator("object.generate_animusic_keyframes", text="Generate Keyframes")
+        # col.template_list
+
+class AnimusicActuatorList(bpy.types.UIList):
+    bl_idname = "VIEW3D_UL_animusic_list"
+    def draw_item(
+        self,
+        context,
+        layout,
+        data,
+        item,
+        icon,
+        active_data,
+        active_property,
+        index,
+        flt_flag,
+    ) -> None:
+        scene = context.scene
+        assert scene is not None
+
+        props: AniMusicProperties = scene.animusic
+
+        if self.layout_type in {"DEFAULT", "COMPACT"}:
+            col = layout.column()
+            col.label(text=item.name)
+            col.prop(item, "prepare_time")
+            col.prop(item, "release_time")
 
 
 class ActuatorKeyFrame(NamedTuple):
@@ -61,6 +109,44 @@ class ActuatorKeyFrame(NamedTuple):
     track: int
     note: int
 
+
+director_data_text_block_name = "director_data"
+
+
+class AnimusicImport(bpy.types.Operator):
+    bl_idname = "object.import_animusic_director_file"
+    bl_label = "Import Animusic Director File"
+    bl_description = "Import Animusic Director File"
+
+    def execute(self, context) -> set["OperatorReturnItems"]:
+        scene = context.scene
+        assert scene is not None
+
+        props: AniMusicProperties = scene.animusic
+        print(props.director_data_path)
+        director_data_path = Path(bpy.path.abspath(props.director_data_path))
+
+        assert director_data_path.is_file()
+
+        if director_data_text_block_name in bpy.data.texts:
+            text_block = bpy.data.texts[director_data_text_block_name]
+            text_block.clear()
+        else:
+            text_block = bpy.data.texts.new(name=director_data_text_block_name)
+
+        with open(director_data_path) as director_data_file:
+            text_block.write(director_data_file.read())
+
+        props.actuators.clear()
+
+        data_string = bpy.data.texts[director_data_text_block_name].as_string()
+        director_data = DirectorData.from_json(json.loads(data_string))
+
+        for actuator in director_data.actuators:
+            prop = props.actuators.add()
+            prop.name = actuator.name
+
+        return {"FINISHED"}
 
 class AnimusicGenerate(bpy.types.Operator):
     bl_idname = "object.generate_animusic_keyframes"
@@ -72,15 +158,12 @@ class AnimusicGenerate(bpy.types.Operator):
         assert scene is not None
 
         props: AniMusicProperties = scene.animusic
-        print(props.director_data)
-        director_data_path = Path(
-            bpy.path.abspath(props.director_data)
-        )
 
-        assert director_data_path.exists()
+        if director_data_text_block_name not in bpy.data.texts:
+            return {"CANCELLED"}
 
-        with open(director_data_path) as director_data_file:
-            director_data = DirectorData.from_json(json.load(director_data_file))
+        data_string = bpy.data.texts[director_data_text_block_name].as_string()
+        director_data = DirectorData.from_json(json.loads(data_string))
 
         print(director_data)
 
@@ -110,11 +193,13 @@ class AnimusicGenerate(bpy.types.Operator):
                 obj.keyframe_insert('["action"]', frame=kf.frame)
                 obj.keyframe_insert('["track"]', frame=kf.frame)
                 obj.keyframe_insert('["note"]', frame=kf.frame)
+            prepare_time = props.actuators[actuator.name].prepare_time
+            release_time = props.actuators[actuator.name].release_time
 
             for note in actuator.notes:
                 frame += note.delta * fps
-                end_preparation = max(frame - demo1.prepare_time * fps, previous_hit)
-                complete_animation = frame + demo1.release_time * fps
+                end_preparation = max(frame - prepare_time * fps, previous_hit)
+                complete_animation = frame + release_time * fps
                 add_keyframe(
                     ActuatorKeyFrame(int(end_preparation), False, note.track, note.note)
                 )
@@ -129,18 +214,26 @@ class AnimusicGenerate(bpy.types.Operator):
         return {"FINISHED"}
 
 
+classes = [
+    ActuatorProperties,
+    AniMusicProperties,
+    AnimusicActuatorList,
+    AnimusicGeneratorPanel,
+    AnimusicImport,
+    AnimusicGenerate,
+]
+
+
 def register():
-    bpy.utils.register_class(AnimusicGeneratorPanel)
-    bpy.utils.register_class(AniMusicProperties)
-    bpy.utils.register_class(AnimusicGenerate)
+    for _class in classes:
+        bpy.utils.register_class(_class)
     bpy.types.Scene.animusic = PointerProperty(type=AniMusicProperties)
 
 
 def unregister():
     del bpy.types.Scene.animusic
-    bpy.utils.unregister_class(AnimusicGenerate)
-    bpy.utils.unregister_class(AniMusicProperties)
-    bpy.utils.unregister_class(AnimusicGeneratorPanel)
+    for _class in classes:
+        bpy.utils.unregister_class(_class)
 
 
 # This allows you to run the script directly from Blender's Text editor

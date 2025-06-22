@@ -1,19 +1,20 @@
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Note {
     pub delta: f64,
-    pub track: u64,
-    pub note: u64,
+    pub track: u32,
+    pub channel: u8,
+    pub note: u8,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Actuator {
     pub name: String,
     pub notes: Vec<Note>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct DirectorData {
     pub actuators: Vec<Actuator>,
 }

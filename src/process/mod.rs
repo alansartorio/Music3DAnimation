@@ -1,6 +1,10 @@
 #![allow(clippy::collapsible_match)]
 
-use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeSet, HashMap, hash_map::Entry},
+    rc::Rc,
+};
 
 use anyhow::Result;
 use midly::{MidiMessage, Smf};
@@ -15,6 +19,7 @@ mod scene;
 
 #[derive(Debug, Default)]
 struct TrackInfo {
+    track_number: u32,
     track_name: Option<String>,
     device_name: Option<String>,
     instrument_name: Option<String>,
@@ -55,7 +60,18 @@ fn note_matches_controlled_notes(
     }
 }
 
+fn find_default_us_per_beat(smf: &Smf) -> Option<midly::num::u24> {
+    smf.tracks[0].iter().find_map(|event| {
+        if let midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(us_per_beat)) = event.kind {
+            Some(us_per_beat)
+        } else {
+            None
+        }
+    })
+}
+
 fn get_machine_note_events(smf: &Smf, machine_notes: Vec<&ControlledNotes>) -> MachineNotes {
+    let default_us_per_beat = find_default_us_per_beat(smf);
     let tick_length = match smf.header.timing {
         midly::Timing::Metrical(_ticks_per_beat) => None,
         midly::Timing::Timecode(fps, divisions) => {
@@ -67,11 +83,26 @@ fn get_machine_note_events(smf: &Smf, machine_notes: Vec<&ControlledNotes>) -> M
         .iter()
         .enumerate()
         .flat_map(|(track_number, track)| {
-            let track_info: Rc<RefCell<TrackInfo>> = Rc::new(TrackInfo::default().into());
-            let mut tick_length = tick_length;
+            let mut track_info = TrackInfo::default();
+            track_info.track_number = track_number as u32;
+            let track_info: Rc<RefCell<TrackInfo>> = Rc::new(track_info.into());
+            let mut tick_length = tick_length.or_else(|| {
+                if let midly::Timing::Metrical(ticks_per_beat) = smf.header.timing
+                    && let Some(default_us_per_beat) = default_us_per_beat
+                {
+                    Some(
+                        default_us_per_beat.as_int() as f64
+                            / ticks_per_beat.as_int() as f64
+                            / 1e6f64,
+                    )
+                } else {
+                    None
+                }
+            });
             let mut notes = vec![];
             let mut time = 0f64;
-            let mut previous_note = time;
+            let mut previous_note_time = time;
+            let mut previous_note = None;
 
             for event in track {
                 if let Some(tick_length) = tick_length {
@@ -123,13 +154,20 @@ fn get_machine_note_events(smf: &Smf, machine_notes: Vec<&ControlledNotes>) -> M
                                     note: key.as_int(),
                                 },
                                 track_info: track_info.clone(),
-                                delta: time - previous_note,
+                                delta: time - previous_note_time,
                             };
-                            if machine_notes.iter().any(|controlled_notes| {
-                                note_matches_controlled_notes(controlled_notes, &complete_note)
-                            }) {
-                                notes.push(complete_note);
-                                previous_note = time;
+                            let is_repeated_note = complete_note.delta <= 0f64
+                                && previous_note.as_ref().is_some_and(|previous_note| {
+                                    complete_note.note.eq(previous_note)
+                                });
+                            if !is_repeated_note {
+                                previous_note.replace(complete_note.note);
+                                if machine_notes.iter().any(|controlled_notes| {
+                                    note_matches_controlled_notes(controlled_notes, &complete_note)
+                                }) {
+                                    notes.push(complete_note);
+                                    previous_note_time = time;
+                                }
                             }
                         }
                     }
@@ -145,16 +183,68 @@ fn get_machine_note_events(smf: &Smf, machine_notes: Vec<&ControlledNotes>) -> M
 }
 
 fn process_machine(notes: MachineNotes, machine: Machine) -> Vec<Actuator> {
-    machine
+    let mut next_index = 0usize;
+
+    let mut track_last_note_time: HashMap<_, _> = notes
+        .iter()
+        .map(|note| note.track_info.borrow().track_number)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|track_number| (track_number, 0f64))
+        .collect();
+
+    let mut actuator_last_note_time: HashMap<_, _> = machine
         .actuators
         .iter()
-        .map(|actuator| Actuator {
-            name: actuator.name.clone(),
-            notes: notes
-                .iter()
-                .filter(|note| note_matches_controlled_notes(&actuator.controlled_notes, note))
-                .map(|note| note.into_output_note())
-                .collect(),
+        .map(|actuator| (actuator.name.as_str(), 0f64))
+        .collect();
+
+    let note_assignations: Vec<_> = notes
+        .iter()
+        .map(|note| {
+            let track_time = track_last_note_time
+                .get_mut(&note.track_info.borrow().track_number)
+                .unwrap();
+            *track_time += note.delta;
+
+            let best_actuator = (0..machine.actuators.len())
+                .map(|i| (i + next_index) % machine.actuators.len())
+                .map(|i| &machine.actuators[i])
+                .find(|actuator| note_matches_controlled_notes(&actuator.controlled_notes, note))
+                .unwrap()
+                .name
+                .as_str();
+
+            let last_note_time = actuator_last_note_time.get_mut(best_actuator).unwrap();
+            let delta = *track_time - *last_note_time;
+            *last_note_time = *track_time;
+
+            next_index += 1;
+            let mut note_copy = note.into_output_note();
+            note_copy.delta = delta;
+
+            (best_actuator, note_copy)
+        })
+        .collect();
+
+    let mut actuators = HashMap::new();
+
+    for (note_assignation, note) in note_assignations {
+        match actuators.entry(note_assignation) {
+            Entry::Vacant(entry) => {
+                entry.insert(vec![note]);
+            }
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().push(note);
+            }
+        }
+    }
+
+    actuators
+        .into_iter()
+        .map(|(name, notes)| Actuator {
+            name: name.to_string(),
+            notes,
         })
         .collect()
 }
@@ -193,6 +283,8 @@ fn debug_track_metadata(smf: &Smf) {
         }
         dbg!(used_channel_notes);
     }
+
+    dbg!(smf);
 }
 
 pub fn process(smf: Smf) -> Result<DirectorData> {

@@ -1,6 +1,7 @@
 from collections import namedtuple
 import bpy
 from pathlib import Path
+from itertools import zip_longest
 
 from typing import TYPE_CHECKING, Iterable, NamedTuple, Optional, assert_never
 
@@ -29,6 +30,7 @@ class ActuatorProperties(PropertyGroup):
     name: StringProperty(default="")
     prepare_time: FloatProperty(name="Prepare Time", default=0.1, unit="TIME")
     release_time: FloatProperty(name="Release Time", default=0.2, unit="TIME")
+    release_offset: FloatProperty(name="Release Offset", default=0, unit="TIME")
     interpolate: BoolProperty(name="Interpolate Keyframes", default=True)
 
 
@@ -111,6 +113,7 @@ class AnimusicActuatorList(bpy.types.UIList):
             col.label(text=item.name)
             col.prop(item, "prepare_time")
             col.prop(item, "release_time")
+            col.prop(item, "release_offset")
             col.prop(item, "interpolate")
 
 
@@ -201,7 +204,10 @@ class AnimusicGenerate(bpy.types.Operator):
             actuator_props = props.actuators[actuator.name]
             prepare_time = actuator_props.prepare_time
             release_time = actuator_props.release_time
+            release_offset = actuator_props.release_offset
             interpolate = actuator_props.interpolate
+
+            frame += release_offset * fps
 
             def add_keyframe(kf: ActuatorKeyFrame):
                 obj["action"] = float(kf.action) if interpolate else kf.action
@@ -212,10 +218,13 @@ class AnimusicGenerate(bpy.types.Operator):
                 obj.keyframe_insert('["note"]', frame=kf.frame)
 
             first = True
-            for note in actuator.notes:
+            for note, next_note in zip_longest(actuator.notes, actuator.notes[1:]):
                 frame += note.delta * fps
                 end_preparation = max(frame - prepare_time * fps, previous_hit)
                 complete_animation = frame + release_time * fps
+                if next_note is not None:
+                    next_frame = frame + next_note.delta * fps - prepare_time * fps
+                    complete_animation = min(complete_animation, next_frame)
                 if first:
                     add_keyframe(
                         ActuatorKeyFrame(
@@ -232,6 +241,16 @@ class AnimusicGenerate(bpy.types.Operator):
                         int(complete_animation), False, note.track, note.note
                     )
                 )
+                animation_data = obj.animation_data
+                assert animation_data is not None
+                for layer in animation_data.action.layers:
+                    for strip in layer.strips:
+                        for channelbag in strip.channelbags:
+                            for fcurve in channelbag.fcurves:
+                                for pt in fcurve.keyframe_points:
+                                    pt.interpolation = (
+                                        "BOUNCE" if interpolate else "CONSTANT"
+                                    )
                 previous_hit = complete_animation
 
         return {"FINISHED"}

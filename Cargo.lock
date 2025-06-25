@@ -3,17 +3,6 @@
 version = 4
 
 [[package]]
-name = "animusic-director"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "midly",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "anstream"
 version = "0.6.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -177,6 +166,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "207d755f4cb882d20c4da58d707ca9130a0c9bc5061f657a4f299b8e36362b7a"
 dependencies = [
  "rayon",
+]
+
+[[package]]
+name = "music3danimation-director"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "midly",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 {
-  description = "Animusic director";
+  description = "Music3DAnimation director";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";

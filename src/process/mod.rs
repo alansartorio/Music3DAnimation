@@ -283,8 +283,6 @@ fn debug_track_metadata(smf: &Smf) {
         }
         dbg!(used_channel_notes);
     }
-
-    dbg!(smf);
 }
 
 pub fn process(smf: Smf) -> Result<DirectorData> {

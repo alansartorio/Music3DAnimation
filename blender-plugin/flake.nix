@@ -1,5 +1,5 @@
 {
-  description = "Animusic Blender Extension";
+  description = "Music3DAnimation Importer Blender Extension";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -16,7 +16,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        name = "animusic";
+        name = "music3danimation-importer-blender-ext";
         version = "0.0.1";
         fake-bpy-module = rec {
           pname = "fake_bpy_module";
@@ -53,12 +53,12 @@
 
           id = name;
           inherit version;
-          name = "Animusic Player";
-          tagline = "Animusic Player";
-          maintainer = "Alan Sartorio <alan42ga@hotmail.com>";
+          name = "Music3DAnimation Importer";
+          tagline = "Music3DAnimation Importer";
+          maintainer = "Alan Sartorio";
           type = "add-on";
 
-          blender_version_min = "4.2.0";
+          blender_version_min = "4.4.0";
 
           license = [
             "SPDX:GPL-3.0-or-later"
@@ -83,10 +83,10 @@
 
             cp ${blender-manifest} blender_manifest.toml
 
-            #zip animusic-blender.zip blender_manifest.toml wheels/* __init__.py
-            zip animusic-blender.zip blender_manifest.toml *.py
+            #zip music3danimation-importer-blender.zip blender_manifest.toml wheels/* __init__.py
+            zip music3danimation-importer-blender.zip blender_manifest.toml *.py
           '';
-          installPhase = ''cp animusic-blender.zip $out'';
+          installPhase = ''cp music3danimation-importer-blender.zip $out'';
         };
         devShells.default = pkgs.mkShellNoCC {
           buildInputs = with pkgs; [

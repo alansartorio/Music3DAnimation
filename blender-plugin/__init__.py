@@ -34,10 +34,10 @@ class ActuatorProperties(PropertyGroup):
     interpolate: BoolProperty(name="Interpolate Keyframes", default=True)
 
 
-class AniMusicProperties(PropertyGroup):
+class Music3DAnimationProperties(PropertyGroup):
     director_data_path: StringProperty(
         name="Director Data File",
-        description="Animusic Director Data",
+        description="Music3DAnimation Director Data",
         default="",
         maxlen=1024,
         subtype="FILE_PATH",
@@ -49,9 +49,9 @@ class AniMusicProperties(PropertyGroup):
     selected_actuator: IntProperty()
 
 
-class AnimusicGeneratorPanel(Panel):
-    bl_idname = "VIEW3D_PT_animusic"
-    bl_label = "Animusic"
+class Music3DAnimationGeneratorPanel(Panel):
+    bl_idname = "VIEW3D_PT_music3danimation"
+    bl_label = "Music3DAnimation"
     bl_category = "Tool"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -63,7 +63,7 @@ class AnimusicGeneratorPanel(Panel):
     def draw_header(self, context):
         layout = self.layout
         assert layout is not None
-        layout.label(text="Animusic")
+        layout.label(text="Music3DAnimation")
 
     def draw(self, context):
         layout = self.layout
@@ -71,25 +71,25 @@ class AnimusicGeneratorPanel(Panel):
         scene = context.scene
         assert scene is not None
 
-        props: AniMusicProperties = scene.animusic
+        props: Music3DAnimationProperties = scene.music3danimation
 
         col = layout.column(align=True)
         col.prop(props, "director_data_path", text="")
-        col.operator("object.import_animusic_director_file", text="Import")
+        col.operator("object.import_music3danimation_director_file", text="Import")
         col.template_list(
-            "VIEW3D_UL_animusic_list",
+            "VIEW3D_UL_music3danimation_list",
             "",
             props,
             "actuators",
             props,
             "selected_actuator",
         )
-        col.operator("object.generate_animusic_keyframes", text="Generate Keyframes")
+        col.operator("object.generate_music3danimation_keyframes", text="Generate Keyframes")
         # col.template_list
 
 
-class AnimusicActuatorList(bpy.types.UIList):
-    bl_idname = "VIEW3D_UL_animusic_list"
+class Music3DAnimationActuatorList(bpy.types.UIList):
+    bl_idname = "VIEW3D_UL_music3danimation_list"
 
     def draw_item(
         self,
@@ -106,7 +106,7 @@ class AnimusicActuatorList(bpy.types.UIList):
         scene = context.scene
         assert scene is not None
 
-        props: AniMusicProperties = scene.animusic
+        props: Music3DAnimationProperties = scene.music3danimation
 
         if self.layout_type in {"DEFAULT", "COMPACT"}:
             col = layout.column()
@@ -127,16 +127,16 @@ class ActuatorKeyFrame(NamedTuple):
 director_data_text_block_name = "director_data"
 
 
-class AnimusicImport(bpy.types.Operator):
-    bl_idname = "object.import_animusic_director_file"
-    bl_label = "Import Animusic Director File"
-    bl_description = "Import Animusic Director File"
+class Music3DAnimationImport(bpy.types.Operator):
+    bl_idname = "object.import_music3danimation_director_file"
+    bl_label = "Import Music3DAnimation Director File"
+    bl_description = "Import Music3DAnimation Director File"
 
     def execute(self, context) -> set["OperatorReturnItems"]:
         scene = context.scene
         assert scene is not None
 
-        props: AniMusicProperties = scene.animusic
+        props: Music3DAnimationProperties = scene.music3danimation
         print(props.director_data_path)
         director_data_path = Path(bpy.path.abspath(props.director_data_path))
 
@@ -163,16 +163,16 @@ class AnimusicImport(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class AnimusicGenerate(bpy.types.Operator):
-    bl_idname = "object.generate_animusic_keyframes"
-    bl_label = "Generate Animusic Keyframes"
-    bl_description = "Generate Animusic keyframes from imported director file"
+class Music3DAnimationGenerate(bpy.types.Operator):
+    bl_idname = "object.generate_music3danimation_keyframes"
+    bl_label = "Generate Music3DAnimation Keyframes"
+    bl_description = "Generate Music3DAnimation keyframes from imported director file"
 
     def execute(self, context) -> set["OperatorReturnItems"]:
         scene = context.scene
         assert scene is not None
 
-        props: AniMusicProperties = scene.animusic
+        props: Music3DAnimationProperties = scene.music3danimation
 
         if director_data_text_block_name not in bpy.data.texts:
             return {"CANCELLED"}
@@ -258,22 +258,22 @@ class AnimusicGenerate(bpy.types.Operator):
 
 classes = [
     ActuatorProperties,
-    AniMusicProperties,
-    AnimusicActuatorList,
-    AnimusicGeneratorPanel,
-    AnimusicImport,
-    AnimusicGenerate,
+    Music3DAnimationProperties,
+    Music3DAnimationActuatorList,
+    Music3DAnimationGeneratorPanel,
+    Music3DAnimationImport,
+    Music3DAnimationGenerate,
 ]
 
 
 def register():
     for _class in classes:
         bpy.utils.register_class(_class)
-    bpy.types.Scene.animusic = PointerProperty(type=AniMusicProperties)
+    bpy.types.Scene.music3danimation = PointerProperty(type=Music3DAnimationProperties)
 
 
 def unregister():
-    del bpy.types.Scene.animusic
+    del bpy.types.Scene.music3danimation
     for _class in classes:
         bpy.utils.unregister_class(_class)
 

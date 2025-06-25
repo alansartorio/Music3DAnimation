@@ -16,7 +16,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        name = "music3danimation-importer-blender-ext";
+        name = "music3danimation_importer_blender_ext";
         version = "0.0.1";
         fake-bpy-module = rec {
           pname = "fake_bpy_module";
